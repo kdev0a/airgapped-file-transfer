@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF417 (Placeholder) Decoder</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            line-height: 1.6;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-width: 800px;
+            margin: 20px auto;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        textarea {
+            width: calc(100% - 22px); /* Account for padding */
+            min-height: 200px;
+            margin-bottom: 15px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        button {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #result {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            text-align: center;
+        }
+        #downloadLink {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 10px 20px;
+            background-color: #28a745;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+            transition: background-color 0.2s ease;
+        }
+        #downloadLink:hover {
+            background-color: #218838;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+         .info {
+            font-size: 0.9em;
+            color: #555;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>PDF417 (Placeholder) Decoder</h1>
+        <p>Paste the base64 data chunks (one per line, in the correct order, including the first 'META:' chunk) from the encoder output into the text area below. Then click "Decode and Reconstruct File".</p>
+
+        <label for="base64Input">Base64 Data Chunks (one per line):</label>
+        <textarea id="base64Input" placeholder="Paste chunk 1 here...&#10;Paste chunk 2 here...&#10;..."></textarea>
+
+        <button id="decodeButton">Decode and Reconstruct File</button>
+
+        <div id="result">
+            <!-- Download link or status message will appear here -->
+        </div>
+    </div>
+
+    <script>
+        const base64Input = document.getElementById('base64Input');
+        const decodeButton = document.getElementById('decodeButton');
+        const resultDiv = document.getElementById('result');
+
+        decodeButton.addEventListener('click', () => {
+            resultDiv.innerHTML = '<p class="info">Processing...</p>'; // Clear previous result/error
+
+            const lines = base64Input.value.split('\n');
+            const chunks = lines.map(line => line.trim()).filter(line => line.length > 0); // Trim whitespace and remove empty lines
+
+            if (chunks.length === 0) {
+                resultDiv.innerHTML = '<p class="error">Error: No data pasted.</p>';
+                return;
+            }
+
+            // Extract metadata from the first chunk
+            let mimeType = 'application/octet-stream'; // Default MIME type
+            let base64DataChunks = [];
+            const firstChunk = chunks[0];
+
+            if (firstChunk.startsWith('META:')) {
+                mimeType = firstChunk.substring('META:'.length);
+                base64DataChunks = chunks.slice(1); // Use chunks starting from the second one
+                 console.log("Detected MIME type:", mimeType);
+            } else {
+                // Assume no metadata chunk was provided (legacy or manual input)
+                console.warn("Metadata chunk (starting with META:) not found. Using default MIME type.");
+                base64DataChunks = chunks; // Use all chunks as data
+            }
+
+
+            if (base64DataChunks.length === 0) {
+                resultDiv.innerHTML = '<p class="error">Error: No data chunks found after processing metadata.</p>';
+                return;
+            }
+
+
+            try {
+                // Concatenate all data chunks
+                const fullBase64String = base64DataChunks.join('');
+
+                // Decode base64 string to binary string
+                const binaryString = atob(fullBase64String);
+
+                // Convert binary string to a byte array (Uint8Array)
+                const len = binaryString.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+
+                // Create a Blob from the byte array
+                const blob = new Blob([bytes], { type: mimeType });
+
+                // Create a download link for the Blob
+                const downloadUrl = URL.createObjectURL(blob);
+                const downloadLink = document.createElement('a');
+                downloadLink.id = 'downloadLink';
+                downloadLink.href = downloadUrl;
+                // Suggest a filename (original filename is lost in this simple process)
+                const fileExtension = mimeType.split('/')[1] || 'bin'; // Basic extension guessing
+                downloadLink.download = `reconstructed_file.${fileExtension}`;
+                downloadLink.textContent = `Download Reconstructed File (${mimeType})`;
+
+                resultDiv.innerHTML = ''; // Clear "Processing..."
+                resultDiv.appendChild(downloadLink);
+                resultDiv.innerHTML += `<p class="info">File reconstructed successfully (${bytes.length} bytes). Click the link above to download.</p>`;
+
+                // Optional: Revoke the object URL after some time or on next decode
+                // setTimeout(() => URL.revokeObjectURL(downloadUrl), 60000); // Example: revoke after 1 minute
+
+            } catch (error) {
+                console.error("Error decoding base64 or creating file:", error);
+                let errorMessage = `Error: ${error.message}.`;
+                if (error instanceof DOMException && error.name === 'InvalidCharacterError') {
+                     errorMessage += ' This often means the input data is not valid base64 or is corrupted.';
+                } else if (error.message.includes("Failed to execute 'atob'")) {
+                     errorMessage += ' Invalid base64 string detected.';
+                }
+                resultDiv.innerHTML = `<p class="error">${errorMessage}</p>`;
+            }
+        });
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File to PDF417 Encoder (Sequential)</title>
+    <style>
+        /* Styles remain the same as the previous version */
+        body {
+            font-family: sans-serif;
+            line-height: 1.6;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-width: 900px; /* Wider to accommodate barcodes */
+            margin: 20px auto;
+        }
+        h1, h2 {
+            color: #333;
+            text-align: center;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        input[type="file"] {
+            display: block;
+            margin-bottom: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            width: calc(100% - 22px); /* Account for padding */
+        }
+        #barcode-output {
+            margin-top: 30px;
+            border-top: 1px solid #eee;
+            padding-top: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px; /* Spacing between barcodes */
+            justify-content: center;
+            min-height: 100px; /* Give it some initial space */
+        }
+        .barcode-item {
+            border: 1px solid #ddd;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            text-align: center;
+            word-break: break-all; /* Allow long base64 strings to wrap */
+            max-width: 400px; /* Adjust as needed */
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .barcode-item canvas {
+            display: block;
+            margin: 10px auto;
+            border: 1px solid #eee; /* Optional border for canvas */
+            max-width: 100%; /* Ensure canvas scales down if needed */
+            height: auto; /* Maintain aspect ratio */
+            background-color: #fff; /* Background for the canvas itself */
+        }
+         .barcode-item .error-message {
+            color: red;
+            font-weight: bold;
+            margin: 10px;
+            padding: 10px;
+            border: 1px solid red;
+            background-color: #ffebeb;
+            max-height: 100px;
+            overflow: auto;
+            width: 90%; /* Fit within item */
+        }
+        .barcode-data {
+            font-family: monospace;
+            font-size: 0.8em;
+            margin-top: 10px;
+            max-height: 80px; /* Limit visible height */
+            overflow-y: auto; /* Add scroll if needed */
+            border: 1px dashed #ccc;
+            padding: 5px;
+            background-color: #fff;
+            width: 95%; /* Ensure it fits within the item */
+            text-align: left;
+        }
+        .info {
+            font-size: 0.9em;
+            color: #555;
+            margin-bottom: 5px;
+        }
+        #status {
+            margin-top: 15px;
+            font-weight: bold;
+            text-align: center;
+            min-height: 1.2em; /* Prevent layout shift */
+        }
+    </style>
+
+    <!-- Import libraries -->
+    <!-- To make this file self-contained, copy entire contents of the minified JS to be inline-->
+    <script src="bcmath-min.js" type="text/javascript"></script>
+    <script src="pdf417-min.js" type="text/javascript"></script>
+
+</head>
+<body>
+    <div class="container">
+        <h1>File to PDF417 Encoder (Sequential)</h1>
+        <p>Upload a file. It will be converted to base64, split into chunks, and displayed below as PDF417 barcodes, generated one by one. Each barcode section also contains the base64 data chunk needed for the decoder.</p>
+        <p><strong>Important:</strong> Ensure <code>bcmath-min.js</code> and <code>pdf417-min.js</code> code is pasted into the designated <code>&lt;script&gt;</code> sections.</p>
+
+        <label for="fileInput">Choose a file:</label>
+        <input type="file" id="fileInput">
+
+        <div id="status"></div>
+
+        <h2>Generated Barcodes</h2>
+        <div id="barcode-output">
+            <!-- Barcodes will be inserted here sequentially -->
+        </div>
+    </div>
+
+    <script>
+        // Ensure libraries are loaded (basic check)
+        if (typeof PDF417 === 'undefined' || typeof PDF417.init !== 'function') {
+             const container = document.querySelector('.container');
+             const warning = document.createElement('p');
+             warning.innerHTML = '<strong>Error:</strong> PDF417 or BCMath library not found. Please ensure the library code is pasted correctly into the script tags in the HTML head.';
+             warning.style.color = 'red';
+             warning.style.border = '2px solid red';
+             warning.style.padding = '10px';
+             warning.style.backgroundColor = '#ffebeb';
+             container.insertBefore(warning, container.firstChild.nextSibling); // Insert after h1
+             document.getElementById('fileInput').disabled = true;
+             document.getElementById('status').textContent = 'Libraries missing. Cannot proceed.';
+        }
+
+        const fileInput = document.getElementById('fileInput');
+        const barcodeOutput = document.getElementById('barcode-output');
+        const statusDiv = document.getElementById('status');
+
+        // --- Configuration ---
+        const CHUNK_SIZE = 500; // Characters per chunk
+        const BARCODE_MODULE_WIDTH = 2; // pixels
+        const BARCODE_MODULE_HEIGHT = 2; // pixels
+
+        // --- PDF417 Barcode Generator Function (Modified) ---
+        // This function now assumes the canvas will be appended *before* drawing occurs.
+        function renderPDF417BarcodeOnCanvas(canvas, dataChunk) {
+            // Initialize PDF417 generator
+            PDF417.init(dataChunk);
+            const barcode = PDF417.getBarcodeArray();
+
+            // Set canvas dimensions based on barcode data
+            const bw = BARCODE_MODULE_WIDTH;
+            const bh = BARCODE_MODULE_HEIGHT;
+            canvas.width = bw * barcode['num_cols'];
+            canvas.height = bh * barcode['num_rows'];
+
+            // Get context *after* canvas is in DOM and sized
+            const ctx = canvas.getContext('2d');
+             if (!ctx) {
+                 throw new Error("Could not get 2D context for canvas.");
+             }
+            ctx.fillStyle = '#000000'; // Black modules
+
+            // Draw barcode modules
+            let y = 0;
+            for (let r = 0; r < barcode['num_rows']; ++r) {
+                let x = 0;
+                for (let c = 0; c < barcode['num_cols']; ++c) {
+                    if (barcode['bcode'][r][c] == 1) {
+                        ctx.fillRect(x, y, bw, bh);
+                    }
+                    x += bw;
+                }
+                y += bh;
+            }
+        }
+
+        // --- Function to process chunks sequentially ---
+        function processChunk(index, chunks) {
+            const totalChunks = chunks.length;
+
+            // Base case: All chunks processed
+            if (index >= totalChunks) {
+                statusDiv.textContent = `Finished generating ${totalChunks} barcodes.`;
+                fileInput.disabled = false; // Re-enable file input
+                return;
+            }
+
+            statusDiv.textContent = `Generating barcode ${index + 1} of ${totalChunks}...`;
+
+            // Use setTimeout to yield to the event loop, allowing UI updates
+            // and ensuring the previous element is rendered before processing the next.
+            setTimeout(() => {
+                const chunk = chunks[index];
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'barcode-item';
+
+                // Add chunk info
+                const infoDiv = document.createElement('div');
+                infoDiv.className = 'info';
+                infoDiv.textContent = `Chunk ${index + 1} / ${totalChunks}`;
+                itemDiv.appendChild(infoDiv);
+
+                // Create canvas and append it *before* drawing
+                const canvas = document.createElement('canvas');
+                // Add a placeholder background or style while loading
+                canvas.style.backgroundColor = '#eee';
+                itemDiv.appendChild(canvas);
+
+                // Add data text area
+                const dataInfoDiv = document.createElement('div');
+                dataInfoDiv.className = 'info';
+                dataInfoDiv.textContent = 'Base64 Data (Copy this line):';
+                itemDiv.appendChild(dataInfoDiv);
+
+                const dataDiv = document.createElement('div');
+                dataDiv.className = 'barcode-data';
+                dataDiv.textContent = chunk;
+                itemDiv.appendChild(dataDiv);
+
+                // Append the whole item structure to the output area *now*
+                barcodeOutput.appendChild(itemDiv);
+
+                // Now, attempt to draw on the canvas (which is in the DOM)
+                try {
+                    // Check if libraries are loaded before attempting to use them
+                    if (typeof PDF417 === 'undefined' || typeof PDF417.init !== 'function') {
+                         throw new Error("PDF417 Library not loaded correctly.");
+                    }
+                    renderPDF417BarcodeOnCanvas(canvas, chunk);
+                    canvas.style.backgroundColor = '#fff'; // Reset background on success
+
+                } catch (error) {
+                    console.error(`Error generating barcode for chunk ${index + 1}:`, error);
+                    // Display error message within the itemDiv
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'error-message';
+                    errorDiv.textContent = `Error: ${error.message}. Try reducing CHUNK_SIZE?`;
+                    // Insert error message before the data div for visibility
+                    itemDiv.insertBefore(errorDiv, dataInfoDiv);
+                    // Remove the canvas or style it to indicate failure
+                    canvas.remove(); // Remove the failed canvas
+                }
+
+                // Schedule the next chunk processing
+                processChunk(index + 1, chunks);
+
+            }, 0); // 0ms timeout is enough to yield
+        }
+
+
+        // --- File Processing Logic ---
+        fileInput.addEventListener('change', (event) => {
+             // Check again if libraries are loaded before processing
+             if (typeof PDF417 === 'undefined' || typeof PDF417.init !== 'function') {
+                 statusDiv.textContent = 'Libraries missing. Cannot process file.';
+                 return;
+             }
+
+            const file = event.target.files[0];
+            if (!file) {
+                barcodeOutput.innerHTML = '';
+                statusDiv.textContent = 'No file selected.';
+                return;
+            }
+
+            // Disable file input during processing
+            fileInput.disabled = true;
+            statusDiv.textContent = 'Reading file...';
+            barcodeOutput.innerHTML = ''; // Clear previous output
+
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+                try {
+                    const dataUrl = e.target.result;
+                    const base64Prefix = "base64,";
+                    const base64StringWithPrefix = dataUrl.substring(dataUrl.indexOf(base64Prefix));
+                    const base64String = base64StringWithPrefix.substring(base64Prefix.length);
+                    const mimeType = dataUrl.substring(dataUrl.indexOf(':') + 1, dataUrl.indexOf(';'));
+
+                    console.log(`File: ${file.name}, Type: ${mimeType}, Size: ${file.size} bytes`);
+                    console.log(`Base64 length: ${base64String.length} characters`);
+
+                    const chunks = [];
+                    const metadataChunk = `META:${mimeType}`;
+                    chunks.push(metadataChunk);
+
+                    for (let i = 0; i < base64String.length; i += CHUNK_SIZE) {
+                        chunks.push(base64String.substring(i, i + CHUNK_SIZE));
+                    }
+
+                    statusDiv.textContent = `File processed. Preparing to generate ${chunks.length} barcodes...`;
+
+                    // Start sequential processing from the first chunk (index 0)
+                    if (chunks.length > 0) {
+                         processChunk(0, chunks);
+                    } else {
+                         statusDiv.textContent = 'No data chunks to process.';
+                         fileInput.disabled = false; // Re-enable if no chunks
+                    }
+
+                } catch (error) {
+                    console.error("Error processing file:", error);
+                    statusDiv.textContent = `Error: ${error.message}`;
+                    barcodeOutput.innerHTML = '<p style="color: red;">Could not process the file.</p>';
+                    fileInput.disabled = false; // Re-enable on error
+                }
+            };
+
+            reader.onerror = (e) => {
+                console.error("FileReader error:", e);
+                statusDiv.textContent = 'Error reading file.';
+                barcodeOutput.innerHTML = '<p style="color: red;">Could not read the file.</p>';
+                fileInput.disabled = false; // Re-enable on error
+            };
+
+            reader.readAsDataURL(file);
+        });
+
+    </script>
+</body>
+</html>
