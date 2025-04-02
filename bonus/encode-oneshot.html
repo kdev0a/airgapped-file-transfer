@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Single PDF417 Generator</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            line-height: 1.6;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-width: 600px;
+            margin: 20px auto;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        textarea {
+            width: calc(100% - 22px); /* Account for padding */
+            min-height: 100px;
+            margin-bottom: 15px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+         button {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            margin-bottom: 20px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #barcode-output {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            text-align: center;
+            min-height: 50px; /* Placeholder space */
+        }
+        #barcode-output canvas {
+            display: block;
+            margin: 10px auto;
+            border: 1px solid #eee;
+            max-width: 100%;
+            height: auto;
+            background-color: #fff;
+        }
+        #barcode-output .error-message {
+             color: red;
+             font-weight: bold;
+             margin-top: 10px;
+        }
+         #status {
+            margin-top: 15px;
+            font-weight: bold;
+            text-align: center;
+            min-height: 1.2em;
+        }
+    </style>
+
+    <!-- Import libraries -->
+    <!-- To make this file self-contained, copy entire contents of the minified JS to be inline-->
+    <script src="./../bcmath-min.js" type="text/javascript"></script>
+    <script src="./../pdf417-min.js" type="text/javascript"></script>
+
+</head>
+<body>
+    <div class="container">
+        <h1>Single PDF417 Generator</h1>
+        <p>Enter text into the box below and click "Generate" to create a single PDF417 barcode.</p>
+        <p><strong>Important:</strong> Ensure <code>bcmath-min.js</code> and <code>pdf417-min.js</code> code is pasted into the designated <code>&lt;script&gt;</code> sections.</p>
+
+        <label for="textInput">Text to Encode:</label>
+        <textarea id="textInput" placeholder="Enter text here..."></textarea>
+
+        <button id="generateButton">Generate Barcode</button>
+
+        <div id="status"></div>
+
+        <div id="barcode-output">
+            <!-- Barcode canvas or error message will appear here -->
+        </div>
+    </div>
+
+    <script>
+        // Ensure libraries are loaded (basic check)
+        if (typeof PDF417 === 'undefined' || typeof PDF417.init !== 'function') {
+             const container = document.querySelector('.container');
+             const warning = document.createElement('p');
+             warning.innerHTML = '<strong>Error:</strong> PDF417 or BCMath library not found. Please ensure the library code is pasted correctly into the script tags in the HTML head.';
+             warning.style.color = 'red';
+             warning.style.border = '2px solid red';
+             warning.style.padding = '10px';
+             warning.style.backgroundColor = '#ffebeb';
+             container.insertBefore(warning, container.firstChild.nextSibling); // Insert after h1
+             document.getElementById('generateButton').disabled = true;
+             document.getElementById('status').textContent = 'Libraries missing. Cannot proceed.';
+        }
+
+        const textInput = document.getElementById('textInput');
+        const generateButton = document.getElementById('generateButton');
+        const barcodeOutput = document.getElementById('barcode-output');
+        const statusDiv = document.getElementById('status');
+
+        // --- Configuration ---
+        const BARCODE_MODULE_WIDTH = 2; // pixels
+        const BARCODE_MODULE_HEIGHT = 2; // pixels
+
+        generateButton.addEventListener('click', () => {
+            // Check again if libraries are loaded
+             if (typeof PDF417 === 'undefined' || typeof PDF417.init !== 'function') {
+                 statusDiv.textContent = 'Libraries missing. Cannot generate barcode.';
+                 return;
+             }
+
+            const textToEncode = textInput.value;
+            barcodeOutput.innerHTML = ''; // Clear previous output
+            statusDiv.textContent = ''; // Clear status
+
+            if (!textToEncode) {
+                statusDiv.textContent = 'Please enter some text to encode.';
+                return;
+            }
+
+            statusDiv.textContent = 'Generating barcode...';
+
+            try {
+                // Initialize PDF417 generator
+                PDF417.init(textToEncode);
+                const barcode = PDF417.getBarcodeArray();
+
+                // Create canvas element
+                const canvas = document.createElement('canvas');
+                const bw = BARCODE_MODULE_WIDTH;
+                const bh = BARCODE_MODULE_HEIGHT;
+
+                canvas.width = bw * barcode['num_cols'];
+                canvas.height = bh * barcode['num_rows'];
+
+                // Append canvas *before* getting context and drawing
+                barcodeOutput.appendChild(canvas);
+
+                const ctx = canvas.getContext('2d');
+                 if (!ctx) {
+                     throw new Error("Could not get 2D context for canvas.");
+                 }
+                ctx.fillStyle = '#000000'; // Black modules
+
+                // Draw barcode modules
+                let y = 0;
+                for (let r = 0; r < barcode['num_rows']; ++r) {
+                    let x = 0;
+                    for (let c = 0; c < barcode['num_cols']; ++c) {
+                        if (barcode['bcode'][r][c] == 1) {
+                            ctx.fillRect(x, y, bw, bh);
+                        }
+                        x += bw;
+                    }
+                    y += bh;
+                }
+                statusDiv.textContent = 'Barcode generated successfully.';
+
+            } catch (error) {
+                console.error('Error generating barcode:', error);
+                barcodeOutput.innerHTML = `<p class="error-message">Error: ${error.message}. Input might be too long or contain unsupported characters for the library.</p>`;
+                statusDiv.textContent = 'Barcode generation failed.';
+            }
+        });
+
+    </script>
+</body>
+</html>

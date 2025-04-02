@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File to Base64 Chunks (Barcodeless)</title>
+    <style>
+        /* Reusing similar styles for consistency */
+        body {
+            font-family: sans-serif;
+            line-height: 1.6;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-width: 800px;
+            margin: 20px auto;
+        }
+        h1, h2 {
+            color: #333;
+            text-align: center;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        input[type="file"] {
+            display: block;
+            margin-bottom: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            width: calc(100% - 22px);
+        }
+        #chunk-output { /* Renamed from barcode-output */
+            margin-top: 30px;
+            border-top: 1px solid #eee;
+            padding-top: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            justify-content: center;
+        }
+        .chunk-item { /* Renamed from barcode-item */
+            border: 1px solid #ddd;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            text-align: center;
+            word-break: break-all;
+            max-width: 350px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .chunk-data { /* Renamed from barcode-data */
+            font-family: monospace;
+            font-size: 0.8em;
+            margin-top: 10px;
+            max-height: 150px; /* Allow more visible height */
+            overflow-y: auto;
+            border: 1px dashed #ccc;
+            padding: 5px;
+            background-color: #fff;
+            width: 95%;
+            text-align: left;
+        }
+        .info {
+            font-size: 0.9em;
+            color: #555;
+            margin-bottom: 5px;
+        }
+        #status {
+            margin-top: 15px;
+            font-weight: bold;
+            text-align: center;
+            min-height: 1.2em;
+        }
+    </style>
+    <!-- No external JS library dependencies needed for this version -->
+</head>
+<body>
+    <div class="container">
+        <h1>File to Base64 Chunks (Barcodeless)</h1>
+        <p>Upload a file. It will be converted to base64 and split into text chunks suitable for the decoder. No barcodes are generated in this version.</p>
+
+        <label for="fileInput">Choose a file:</label>
+        <input type="file" id="fileInput">
+
+        <div id="status"></div>
+
+        <h2>Generated Base64 Chunks</h2>
+        <div id="chunk-output">
+            <!-- Base64 chunks will be inserted here sequentially -->
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const chunkOutput = document.getElementById('chunk-output');
+        const statusDiv = document.getElementById('status');
+
+        // --- Configuration ---
+        const CHUNK_SIZE = 750; // Base64 characters per chunk (can be larger than barcode version)
+
+        // --- Function to process chunks sequentially ---
+        function processChunk(index, chunks) {
+            const totalChunks = chunks.length;
+
+            if (index >= totalChunks) {
+                statusDiv.textContent = `Finished generating ${totalChunks} text chunks.`;
+                fileInput.disabled = false; // Re-enable file input
+                return;
+            }
+
+            statusDiv.textContent = `Generating chunk ${index + 1} of ${totalChunks}...`;
+
+            setTimeout(() => {
+                const chunk = chunks[index];
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'chunk-item';
+
+                // Add chunk info
+                const infoDiv = document.createElement('div');
+                infoDiv.className = 'info';
+                infoDiv.textContent = `Chunk ${index + 1} / ${totalChunks}`;
+                itemDiv.appendChild(infoDiv);
+
+                // Add data text area label
+                const dataInfoDiv = document.createElement('div');
+                dataInfoDiv.className = 'info';
+                dataInfoDiv.textContent = 'Base64 Data (Copy this line):';
+                itemDiv.appendChild(dataInfoDiv);
+
+                // Add data text area
+                const dataDiv = document.createElement('div');
+                dataDiv.className = 'chunk-data';
+                dataDiv.textContent = chunk;
+                itemDiv.appendChild(dataDiv);
+
+                // Append the whole item structure to the output area
+                chunkOutput.appendChild(itemDiv);
+
+                // Schedule the next chunk processing
+                processChunk(index + 1, chunks);
+
+            }, 0); // Yield to allow UI updates
+        }
+
+
+        // --- File Processing Logic ---
+        fileInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (!file) {
+                chunkOutput.innerHTML = '';
+                statusDiv.textContent = 'No file selected.';
+                return;
+            }
+
+            fileInput.disabled = true;
+            statusDiv.textContent = 'Reading file...';
+            chunkOutput.innerHTML = ''; // Clear previous output
+
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+                try {
+                    const dataUrl = e.target.result;
+                    const base64Prefix = "base64,";
+                    const base64StringWithPrefix = dataUrl.substring(dataUrl.indexOf(base64Prefix));
+                    const base64String = base64StringWithPrefix.substring(base64Prefix.length);
+                    const mimeType = dataUrl.substring(dataUrl.indexOf(':') + 1, dataUrl.indexOf(';'));
+
+                    console.log(`File: ${file.name}, Type: ${mimeType}, Size: ${file.size} bytes`);
+                    console.log(`Base64 length: ${base64String.length} characters`);
+
+                    const chunks = [];
+                    const metadataChunk = `META:${mimeType}`;
+                    chunks.push(metadataChunk);
+
+                    for (let i = 0; i < base64String.length; i += CHUNK_SIZE) {
+                        chunks.push(base64String.substring(i, i + CHUNK_SIZE));
+                    }
+
+                    statusDiv.textContent = `File processed. Preparing to generate ${chunks.length} text chunks...`;
+
+                    if (chunks.length > 0) {
+                         processChunk(0, chunks);
+                    } else {
+                         statusDiv.textContent = 'No data chunks to process.';
+                         fileInput.disabled = false;
+                    }
+
+                } catch (error) {
+                    console.error("Error processing file:", error);
+                    statusDiv.textContent = `Error: ${error.message}`;
+                    chunkOutput.innerHTML = '<p style="color: red;">Could not process the file.</p>';
+                    fileInput.disabled = false;
+                }
+            };
+
+            reader.onerror = (e) => {
+                console.error("FileReader error:", e);
+                statusDiv.textContent = 'Error reading file.';
+                chunkOutput.innerHTML = '<p style="color: red;">Could not read the file.</p>';
+                fileInput.disabled = false;
+            };
+
+            reader.readAsDataURL(file);
+        });
+    </script>
+</body>
+</html>
